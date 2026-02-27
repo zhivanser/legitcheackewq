@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Legit Check AI | Проверка бирок</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f4f9;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 50px 20px;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            max-width: 400px;
+            width: 100%;
+            text-align: center;
+        }
+        h1 { font-size: 24px; margin-bottom: 10px; }
+        p { color: #666; font-size: 14px; margin-bottom: 20px; }
+        input[type="file"] { margin-bottom: 20px; }
+        button {
+            background-color: #000;
+            color: #fff;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+            transition: 0.3s;
+        }
+        button:hover { background-color: #333; }
+        button:disabled { background-color: #999; cursor: not-allowed; }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            background-color: #f8f9fa;
+            font-weight: 500;
+            white-space: pre-wrap; /* Чтобы сохранялись переносы строк */
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Проверка на оригинал 🕵️‍♂️</h1>
+    <p>Загрузите четкое фото бирки одежды</p>
+    
+    <input type="file" id="imageUpload" accept="image/*">
+    <button id="checkBtn" onclick="checkTag()">Проверить бирку</button>
+    
+    <div id="result"></div>
+</div>
+
+<script>
+async function checkTag() {
+    const fileInput = document.getElementById('imageUpload');
+    const resultDiv = document.getElementById('result');
+    const checkBtn = document.getElementById('checkBtn');
+
+    if (!fileInput.files[0]) {
+        alert("Пожалуйста, сначала выберите фотографию!");
+        return;
+    }
+
+    // Блокируем кнопку и показываем загрузку
+    checkBtn.disabled = true;
+    checkBtn.innerText = "Анализируем...";
+    resultDiv.style.display = "block";
+    resultDiv.innerText = "Нейросеть изучает шрифты и швы... ⏳";
+
+    const file = fileInput.files[0];
+    const reader = new FileReader();
+
+    reader.onload = async () => {
+        const base64Image = reader.result;
+
+        try {
+            const response = await fetch('/api/check', {
+                method: 'POST',
+                body: JSON.stringify({ image: base64Image }),
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            const data = await response.json();
+            
+            if (response.ok) {
+                resultDiv.innerText = data.result;
+            } else {
+                resultDiv.innerText = "Ошибка: " + data.error;
+            }
+        } catch (error) {
+            resultDiv.innerText = "Произошла ошибка при соединении с сервером.";
+        } finally {
+            // Возвращаем кнопку в исходное состояние
+            checkBtn.disabled = false;
+            checkBtn.innerText = "Проверить бирку";
+        }
+    };
+
+    // Читаем файл
+    reader.readAsDataURL(file);
+}
+</script>
+
+</body>
+</html>
