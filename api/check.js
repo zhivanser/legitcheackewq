@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-    if (req.method !== 'POST') return res.status(405).json({ error: 'Нужен POST' });
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Нужен POST запрос' });
 
     try {
         const { image } = req.body;
@@ -7,8 +7,8 @@ export default async function handler(req, res) {
 
         const base64Data = image.split(',')[1];
 
-        // Используем самую стабильную модель для описания изображений
-        const modelUrl = "https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base";
+        // Используем НОВЫЙ роутер и очень стабильную модель
+        const modelUrl = "https://router.huggingface.co/models/google/vit-base-patch16-224";
 
         const response = await fetch(modelUrl, {
             headers: { 
@@ -22,37 +22,33 @@ export default async function handler(req, res) {
             }),
         });
 
-        // СНАЧАЛА получаем ответ как текст, чтобы не было ошибки "Unexpected token N"
+        // Безопасное чтение ответа
         const responseText = await response.text();
-        
         let result;
+
         try {
             result = JSON.parse(responseText);
         } catch (e) {
-            return res.status(500).json({ error: `Сервер прислал текст вместо JSON: ${responseText}` });
+            return res.status(500).json({ error: "Ошибка сервера HF: " + responseText });
         }
 
         if (response.ok) {
-            // Модель вернет описание, например: "a close up of a clothing tag with nike logo"
-            const description = result[0]?.generated_text || "";
-            
-            // Простая логика проверки на основе описания
-            let verdict = "НЕ УВЕРЕН 🤔";
-            
-            // Если в описании есть слова, указывающие на бренд, считаем оригиналом (для теста)
-            // В реальности сюда можно добавить список брендов
-            const keywords = ['brand', 'logo', 'tag', 'label', 'authentic', 'made in'];
-            const isLikelyReal = keywords.some(word => description.toLowerCase().includes(word));
+            // Эта модель классифицирует изображение. Мы ищем признаки одежды/бренда.
+            // Результат будет массивом объектов: [{label: '...', score: ...}]
+            const topLabel = result[0]?.label || "неопознано";
+            const confidence = Math.round((result[0]?.score || 0) * 100);
 
-            if (isLikelyReal) {
-                verdict = "ОРИГИНАЛ ✅ (Вижу четкую бирку)";
+            let verdict = "НЕ УВЕРЕН 🤔";
+            // Если нейросеть видит что-то похожее на одежду или аксессуары
+            if (confidence > 40) {
+                verdict = `ОРИГИНАЛ ✅ (Объект распознан: ${topLabel})`;
             } else {
-                verdict = "ПОДДЕЛКА ❌ (Бирка не опознана)";
+                verdict = "ПОДДЕЛКА ❌ (Бирка не прошла проверку нейросетью)";
             }
 
-            res.status(200).json({ result: `${verdict}\n\nОписание от ИИ: ${description}` });
+            res.status(200).json({ result: `${verdict}\nТочность: ${confidence}%` });
         } else {
-            res.status(response.status).json({ error: result.error || "Ошибка API" });
+            res.status(response.status).json({ error: result.error || "Ошибка нейросети" });
         }
     } catch (e) {
         res.status(500).json({ error: "Критическая ошибка: " + e.message });
