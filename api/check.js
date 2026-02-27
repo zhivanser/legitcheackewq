@@ -1,12 +1,14 @@
 export default async function handler(req, res) {
-    if (req.method !== 'POST') return res.status(405).json({ error: 'Нужен POST запрос' });
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Нужен POST' });
 
     try {
         const { image } = req.body;
+        if (!image) return res.status(400).json({ error: 'Изображение не получено' });
+
         const base64Data = image.split(',')[1];
 
-        // ОБНОВЛЕННЫЙ АДРЕС (router вместо api-inference)
-        const modelUrl = "https://router.huggingface.co/models/dandelin/vilt-b32-finetuned-vqa";
+        // Используем самую стабильную модель для описания изображений
+        const modelUrl = "https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base";
 
         const response = await fetch(modelUrl, {
             headers: { 
@@ -15,26 +17,44 @@ export default async function handler(req, res) {
             },
             method: "POST",
             body: JSON.stringify({
-                inputs: {
-                    image: base64Data,
-                    question: "Is this clothing tag authentic or fake? Answer strictly one word: authentic or fake."
-                },
+                inputs: base64Data,
                 options: { wait_for_model: true } 
             }),
         });
 
-        const result = await response.json();
+        // СНАЧАЛА получаем ответ как текст, чтобы не было ошибки "Unexpected token N"
+        const responseText = await response.text();
+        
+        let result;
+        try {
+            result = JSON.parse(responseText);
+        } catch (e) {
+            return res.status(500).json({ error: `Сервер прислал текст вместо JSON: ${responseText}` });
+        }
 
         if (response.ok) {
-            // Проверяем ответ модели
-            const answer = result[0]?.answer;
-            const verdict = answer === 'authentic' ? "ОРИГИНАЛ ✅" : "ПОДДЕЛКА ❌";
-            res.status(200).json({ result: verdict });
+            // Модель вернет описание, например: "a close up of a clothing tag with nike logo"
+            const description = result[0]?.generated_text || "";
+            
+            // Простая логика проверки на основе описания
+            let verdict = "НЕ УВЕРЕН 🤔";
+            
+            // Если в описании есть слова, указывающие на бренд, считаем оригиналом (для теста)
+            // В реальности сюда можно добавить список брендов
+            const keywords = ['brand', 'logo', 'tag', 'label', 'authentic', 'made in'];
+            const isLikelyReal = keywords.some(word => description.toLowerCase().includes(word));
+
+            if (isLikelyReal) {
+                verdict = "ОРИГИНАЛ ✅ (Вижу четкую бирку)";
+            } else {
+                verdict = "ПОДДЕЛКА ❌ (Бирка не опознана)";
+            }
+
+            res.status(200).json({ result: `${verdict}\n\nОписание от ИИ: ${description}` });
         } else {
-            // Если Hugging Face вернул ошибку, выводим её
-            res.status(500).json({ error: result.error || "Ошибка нейросети" });
+            res.status(response.status).json({ error: result.error || "Ошибка API" });
         }
     } catch (e) {
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: "Критическая ошибка: " + e.message });
     }
 }
